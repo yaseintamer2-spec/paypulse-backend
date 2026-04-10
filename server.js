@@ -3,49 +3,39 @@ const app = express();
 
 app.use(express.json());
 
-/*
-  SIMPLE IN-MEMORY DATABASE
-  (resets if server restarts)
-*/
 let users = {};
 
-// HOME ROUTE (fixes "Not Found")
+// HOME (fixes "Not Found")
 app.get("/", (req, res) => {
   res.send("PayPulse backend is running");
 });
 
-// CPX POSTBACK ROUTE
-// CPX sends reward data here
+// CPX POSTBACK
 app.get("/cpx-postback", (req, res) => {
   const userId = req.query.ext_user_id;
-  const reward = parseFloat(req.query.reward_value);
+  const reward = Number(req.query.reward_value);
 
   if (!userId || !reward) {
-    return res.send("missing data");
+    return res.status(400).send("bad request");
   }
 
-  if (!users[userId]) {
-    users[userId] = 0;
-  }
+  if (!users[userId]) users[userId] = 0;
 
   users[userId] += reward;
-
-  console.log(`User ${userId} earned ${reward}`);
 
   res.send("ok");
 });
 
-// BALANCE CHECK ROUTE
+// BALANCE
 app.get("/balance/:userId", (req, res) => {
   const userId = req.params.userId;
 
   res.json({
-    user: userId,
+    userId,
     balance: users[userId] || 0
   });
 });
 
-// START SERVER
 app.listen(3000, () => {
-  console.log("PayPulse backend running on port 3000");
+  console.log("running");
 });
