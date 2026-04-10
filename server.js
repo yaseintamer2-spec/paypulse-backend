@@ -3,84 +3,103 @@ const app = express();
 
 app.use(express.json());
 
-// --------------------
-// MEMORY DATABASE
-// --------------------
-let users = {};
+// =====================
+// SUPABASE SETUP
+// =====================
+const { createClient } = require("@supabase/supabase-js");
 
-// --------------------
-// HOME ROUTE
-// --------------------
+const supabase = createClient(
+  "https://bhiyffflmcygmplbiify.supabase.co",
+  "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImJoaXlmZmZsbWN5Z21wbGJpaWZ5Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzU4NDEwODQsImV4cCI6MjA5MTQxNzA4NH0.7a4VP4ol0WI9Vv5-j3B8PWk8buUOG68oZjXi7xJYvfE"
+);
+
+// =====================
+// HOME
+// =====================
 app.get("/", (req, res) => {
   res.send("PayPulse backend is running");
 });
 
-// --------------------
+// =====================
 // CPX POSTBACK
-// --------------------
-app.get("/cpx-postback", (req, res) => {
-  console.log("CPX REQUEST:", req.query);
-
+// =====================
+app.get("/cpx-postback", async (req, res) => {
   const userId = req.query.user_id;
   const amountUsd = Number(req.query.amount_usd);
-  const amountLocal = Number(req.query.amount_local);
   const transId = req.query.trans_id;
   const status = Number(req.query.status);
 
-  // VALIDATION (prevents invalid request error)
   if (!userId || !transId || isNaN(amountUsd) || isNaN(status)) {
-    console.log("INVALID REQUEST:", req.query);
     return res.status(400).send("invalid request");
   }
 
-  // INIT USER
-  if (!users[userId]) {
-    users[userId] = {
-      balance: 0,
-      transactions: {}
-    };
+  // GET USER
+  let { data: user } = await supabase
+    .from("users")
+    .select("*")
+    .eq("user_id", userId)
+    .single();
+
+  // CREATE USER IF NOT EXISTS
+  if (!user) {
+    const { data: newUser } = await supabase
+      .from("users")
+      .insert({
+        user_id: userId,
+        balance: 0
+      })
+      .select()
+      .single();
+
+    user = newUser;
   }
 
-  // STATUS 1 = PENDING (ADD MONEY)
+  // ADD MONEY
   if (status === 1) {
-    if (!users[userId].transactions[transId]) {
-      users[userId].transactions[transId] = amountUsd;
-      users[userId].balance += amountUsd;
-
-      console.log(`ADD: ${userId} +${amountUsd}`);
-    }
+    await supabase
+      .from("users")
+      .update({
+        balance: user.balance + amountUsd
+      })
+      .eq("user_id", userId);
   }
 
-  // STATUS 2 = REVERSED (REMOVE MONEY)
+  // REVERSE MONEY
   if (status === 2) {
-    const amount = users[userId].transactions[transId];
-
-    if (amount) {
-      users[userId].balance -= amount;
-      delete users[userId].transactions[transId];
-
-      console.log(`REVERSE: ${userId} -${amount}`);
-    }
+    await supabase
+      .from("users")
+      .update({
+        balance: user.balance - amountUsd
+      })
+      .eq("user_id", userId);
   }
+
+  console.log("CPX EVENT:", req.query);
 
   res.send("ok");
 });
 
-// --------------------
+// =====================
 // BALANCE API
-// --------------------
-app.get("/balance/:userId", (req, res) => {
+// =====================
+app.get("/balance/:userId", async (req, res) => {
   const userId = req.params.userId;
 
+  const { data } = await supabase
+    .from("users")
+    .select("*")
+    .eq("user_id", userId)
+    .single();
+
   res.json({
-    userId: userId,
-    balance: users[userId]?.balance || 0
+    userId,
+    balance: data?.balance || 0
   });
 });
 
-// --------------------
+// =====================
 // START SERVER
-// --------------------
+// =====================
 const PORT = process.env.PORT || 3000;
 
 app.listen(PORT, () => {
