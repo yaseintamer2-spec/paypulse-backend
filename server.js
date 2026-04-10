@@ -3,10 +3,19 @@ const app = express();
 
 app.use(express.json());
 
-// simple memory database
+/*
+  SIMPLE IN-MEMORY DATABASE
+  (resets if server restarts)
+*/
 let users = {};
 
-// CPX POSTBACK (receives earnings)
+// HOME ROUTE (fixes "Not Found")
+app.get("/", (req, res) => {
+  res.send("PayPulse backend is running");
+});
+
+// CPX POSTBACK ROUTE
+// CPX sends reward data here
 app.get("/cpx-postback", (req, res) => {
   const userId = req.query.ext_user_id;
   const reward = parseFloat(req.query.reward_value);
@@ -26,13 +35,17 @@ app.get("/cpx-postback", (req, res) => {
   res.send("ok");
 });
 
-// CHECK BALANCE
+// BALANCE CHECK ROUTE
 app.get("/balance/:userId", (req, res) => {
-  const balance = users[req.params.userId] || 0;
-  res.json({ balance });
+  const userId = req.params.userId;
+
+  res.json({
+    user: userId,
+    balance: users[userId] || 0
+  });
 });
 
 // START SERVER
 app.listen(3000, () => {
-  console.log("Server running on port 3000");
+  console.log("PayPulse backend running on port 3000");
 });
