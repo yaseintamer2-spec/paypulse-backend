@@ -4,7 +4,7 @@ const app = express();
 app.use(express.json());
 
 // --------------------
-// SIMPLE DATABASE (RAM)
+// MEMORY DATABASE
 // --------------------
 let users = {};
 
@@ -18,38 +18,63 @@ app.get("/", (req, res) => {
 // --------------------
 // CPX POSTBACK
 // --------------------
-// CPX sends:
-// ext_user_id = user id
-// reward_value = money earned
-// --------------------
 app.get("/cpx-postback", (req, res) => {
-  const userId = req.query.ext_user_id;
-  const reward = Number(req.query.reward_value);
+  console.log("CPX REQUEST:", req.query);
 
-  if (!userId || isNaN(reward)) {
+  const userId = req.query.user_id;
+  const amountUsd = Number(req.query.amount_usd);
+  const amountLocal = Number(req.query.amount_local);
+  const transId = req.query.trans_id;
+  const status = Number(req.query.status);
+
+  // VALIDATION (prevents invalid request error)
+  if (!userId || !transId || isNaN(amountUsd) || isNaN(status)) {
+    console.log("INVALID REQUEST:", req.query);
     return res.status(400).send("invalid request");
   }
 
+  // INIT USER
   if (!users[userId]) {
-    users[userId] = 0;
+    users[userId] = {
+      balance: 0,
+      transactions: {}
+    };
   }
 
-  users[userId] += reward;
+  // STATUS 1 = PENDING (ADD MONEY)
+  if (status === 1) {
+    if (!users[userId].transactions[transId]) {
+      users[userId].transactions[transId] = amountUsd;
+      users[userId].balance += amountUsd;
 
-  console.log(`User ${userId} earned ${reward}`);
+      console.log(`ADD: ${userId} +${amountUsd}`);
+    }
+  }
+
+  // STATUS 2 = REVERSED (REMOVE MONEY)
+  if (status === 2) {
+    const amount = users[userId].transactions[transId];
+
+    if (amount) {
+      users[userId].balance -= amount;
+      delete users[userId].transactions[transId];
+
+      console.log(`REVERSE: ${userId} -${amount}`);
+    }
+  }
 
   res.send("ok");
 });
 
 // --------------------
-// BALANCE CHECK
+// BALANCE API
 // --------------------
 app.get("/balance/:userId", (req, res) => {
   const userId = req.params.userId;
 
   res.json({
     userId: userId,
-    balance: users[userId] || 0
+    balance: users[userId]?.balance || 0
   });
 });
 
