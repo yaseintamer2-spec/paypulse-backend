@@ -14,7 +14,7 @@ const supabase = createClient(
 );
 
 // =====================
-// HOME
+// HOME ROUTE
 // =====================
 app.get("/", (req, res) => {
   res.send("PayPulse backend is running");
@@ -33,7 +33,9 @@ app.get("/cpx-postback", async (req, res) => {
     return res.status(400).send("invalid request");
   }
 
+  // =====================
   // GET USER
+  // =====================
   let { data: user } = await supabase
     .from("users")
     .select("*")
@@ -54,22 +56,34 @@ app.get("/cpx-postback", async (req, res) => {
     user = newUser;
   }
 
+  // =====================
+  // SPLIT LOGIC (35% YOU / 65% USER)
+  // =====================
+  const userCut = amountUsd * 0.65;
+  const adminCut = amountUsd * 0.35;
+
+  // =====================
   // ADD MONEY
+  // =====================
   if (status === 1) {
     await supabase
       .from("users")
       .update({
-        balance: user.balance + amountUsd
+        balance: user.balance + userCut
       })
       .eq("user_id", userId);
+
+    console.log("Admin earned:", adminCut);
   }
 
+  // =====================
   // REVERSE MONEY
+  // =====================
   if (status === 2) {
     await supabase
       .from("users")
       .update({
-        balance: user.balance - amountUsd
+        balance: user.balance - userCut
       })
       .eq("user_id", userId);
   }
