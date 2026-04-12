@@ -1,5 +1,5 @@
 // ===============================
-// PAYPULSE BACKEND (PRODUCTION)
+// PAYPULSE FINAL BACKEND
 // ===============================
 
 require("dotenv").config();
@@ -13,32 +13,20 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// ===============================
-// ENV VARIABLES (PUT IN RENDER)
-// ===============================
-
 const PORT = process.env.PORT || 3000;
 
+// ENV
 const SUPABASE_URL = process.env.SUPABASE_URL;
 const SUPABASE_KEY = process.env.SUPABASE_KEY;
-
 const CPX_APP_ID = process.env.CPX_APP_ID;
 const CPX_SECRET = process.env.CPX_SECRET;
 
-// profit split
-const USER_PERCENT = 0.60;
-const PLATFORM_PERCENT = 0.40;
-
-// ===============================
 // INIT SUPABASE
-// ===============================
-
 const supabase = createClient(SUPABASE_URL, SUPABASE_KEY);
 
 // ===============================
 // HEALTH CHECK
 // ===============================
-
 app.get("/", (req, res) => {
   res.send("API running");
 });
@@ -46,19 +34,16 @@ app.get("/", (req, res) => {
 // ===============================
 // CREATE USER
 // ===============================
-
 app.post("/create-user", async (req, res) => {
   const { userId, email } = req.body;
 
-  const { data, error } = await supabase
-    .from("users")
-    .insert({
-      user_id: userId,
-      email: email,
-      balance: 0,
-      profile_completed: false,
-      bonus_claimed: false
-    });
+  const { error } = await supabase.from("users").insert({
+    user_id: userId,
+    email: email,
+    balance: 0,
+    profile_completed: false,
+    bonus_claimed: false
+  });
 
   if (error) return res.status(500).json({ error });
 
@@ -68,7 +53,6 @@ app.post("/create-user", async (req, res) => {
 // ===============================
 // GET BALANCE
 // ===============================
-
 app.get("/balance/:userId", async (req, res) => {
   const { userId } = req.params;
 
@@ -86,17 +70,16 @@ app.get("/balance/:userId", async (req, res) => {
 // ===============================
 // COMPLETE PROFILE (+$1 BONUS)
 // ===============================
-
 app.post("/complete-profile", async (req, res) => {
   const { userId, country, gender, birth_year } = req.body;
 
-  const { data: user, error } = await supabase
+  const { data: user } = await supabase
     .from("users")
     .select("*")
     .eq("user_id", userId)
     .single();
 
-  if (error) return res.status(500).json({ error });
+  if (!user) return res.status(400).json({ error: "User not found" });
 
   if (user.profile_completed) {
     return res.json({ message: "Already completed" });
@@ -126,12 +109,14 @@ app.post("/complete-profile", async (req, res) => {
 // ===============================
 // GET SURVEYS (CPX API)
 // ===============================
-
 app.get("/get-surveys/:userId", async (req, res) => {
   const { userId } = req.params;
 
-  const userIP = req.headers["x-forwarded-for"] || req.socket.remoteAddress;
-  const userAgent = encodeURIComponent(req.headers["user-agent"]);
+  const userIP =
+    req.headers["x-forwarded-for"]?.split(",")[0] ||
+    req.socket.remoteAddress;
+
+  const userAgent = encodeURIComponent(req.headers["user-agent"] || "");
 
   const secureHash = crypto
     .createHash("md5")
@@ -144,13 +129,12 @@ app.get("/get-surveys/:userId", async (req, res) => {
     const response = await axios.get(url);
     const surveys = response.data.surveys || [];
 
-    // modify payout for user (60%)
     const formatted = surveys.map((s) => ({
       id: s.id,
-      payout: s.payout,
+      payout: s.payout, // FINAL USER PAYOUT (from CPX)
       loi: s.loi,
       conversion_rate: s.conversion_rate,
-      reward_user: (s.payout * USER_PERCENT).toFixed(2),
+      reward_user: s.payout,
       href: s.href
     }));
 
@@ -161,9 +145,8 @@ app.get("/get-surveys/:userId", async (req, res) => {
 });
 
 // ===============================
-// CPX POSTBACK (EARNINGS)
+// CPX POSTBACK (FINAL)
 // ===============================
-
 app.get("/cpx-postback", async (req, res) => {
   const { user_id, amount_usd, trans_id, status } = req.query;
 
@@ -171,7 +154,7 @@ app.get("/cpx-postback", async (req, res) => {
     return res.status(400).send("Missing params");
   }
 
-  // check duplicate transaction
+  // prevent duplicates
   const { data: existing } = await supabase
     .from("transactions")
     .select("*")
@@ -182,11 +165,8 @@ app.get("/cpx-postback", async (req, res) => {
     return res.send("Duplicate ignored");
   }
 
-  const amount = parseFloat(amount_usd);
-  const userAmount = amount * USER_PERCENT;
-  const platformAmount = amount * PLATFORM_PERCENT;
+  const userAmount = parseFloat(amount_usd);
 
-  // get user
   const { data: user } = await supabase
     .from("users")
     .select("*")
@@ -211,12 +191,11 @@ app.get("/cpx-postback", async (req, res) => {
     .update({ balance: newBalance })
     .eq("user_id", user_id);
 
-  // save transaction
+  // store transaction
   await supabase.from("transactions").insert({
     trans_id,
     user_id,
     amount: userAmount,
-    platform_amount: platformAmount,
     status: status == 1 ? "completed" : "reversed"
   });
 
@@ -226,7 +205,6 @@ app.get("/cpx-postback", async (req, res) => {
 // ===============================
 // START SERVER
 // ===============================
-
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
